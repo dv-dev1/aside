@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aside"
+version = "0.1.0"
+description = "Live subtitles and reply suggestions for meetings in a language you are still learning"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "dv-dev1" }]
+dependencies = ["PyGObject>=3.50", "transcribe-cpp>=0.2.3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.9"]
+
+[project.scripts]
+aside = "aside.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aside"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
