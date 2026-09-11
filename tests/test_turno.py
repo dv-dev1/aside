@@ -66,3 +66,10 @@ def test_turno_fecha_no_silencio_mesmo_sem_texto_novo():
 def test_turno_nao_fecha_enquanto_a_pessoa_fala():
     t = turno.Turno(0.1)
     assert not any(t.quadro(False, "and then we") for _ in range(20))
+
+
+def test_corrente_acorda_quem_espera_quando_muda():
+    c = turno.Corrente()
+    c.por_parcial("hello")
+    assert c.esperar(0.01)
+    assert not c.esperar(0.01)

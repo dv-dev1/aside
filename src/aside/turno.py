@@ -60,15 +60,23 @@ class Corrente:
         self._fechadas: list[str] = []
         self._parcial = ""
         self._trava = threading.Lock()
+        self._mudou = threading.Event()
 
     def por_parcial(self, texto: str) -> None:
         with self._trava:
             self._parcial = texto
+        self._mudou.set()
 
     def fechar(self, texto: str) -> None:
         with self._trava:
             self._fechadas.append(texto)
             self._parcial = ""
+        self._mudou.set()
+
+    def esperar(self, limite: float) -> bool:
+        mudou = self._mudou.wait(limite)
+        self._mudou.clear()
+        return mudou
 
     def pegar(self) -> tuple[list[str], str]:
         with self._trava:

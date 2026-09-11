@@ -9,7 +9,6 @@ os.environ.setdefault("GDK_BACKEND", "x11")
 import queue  # noqa: E402
 import sys
 import threading
-import time  # noqa: E402
 from collections import deque
 
 from gi.repository import GLib
@@ -22,35 +21,64 @@ HISTORICO = 6
 SEGUNDOS_DE_FOLGA = 2
 LARGURA_LINHA = 44
 LINHAS_GUARDADAS = 6
-INTERVALO_TRADUCAO = 1.2
+ESPERA_TRADUCAO = 0.3
+TRADUCOES_SIMULTANEAS = 2
 
 
 def _traduzir_ao_vivo(barra: "ui.Barra", corrente: turno.Corrente) -> None:
     """Quem está aprendendo lê português muito mais rápido do que inglês, então é esta
     linha que ele acompanha. Frase fechada traduz uma vez e congela; só a cauda em curso
     é retraduzida, senão o texto se reescreve embaixo de quem está lendo."""
-    fixo = ""
-    cauda = ""
-    parcial_anterior = ""
-    while True:
-        time.sleep(INTERVALO_TRADUCAO)
-        fechadas, parcial = corrente.pegar()
-        try:
-            for frase in fechadas:
-                fixo = turno.podar(
-                    f"{fixo} {nuvem.traduzir(frase)}", LARGURA_LINHA, LINHAS_GUARDADAS
-                )
-                cauda = ""
-                parcial_anterior = ""
-            if parcial and parcial != parcial_anterior:
-                parcial_anterior = parcial
-                cauda = nuvem.traduzir(parcial)
-        except OSError as e:
-            print(f"traducao indisponivel: {e}", file=sys.stderr)
-            continue
-        texto = f"{fixo} {cauda}".strip()
+    estado = {"fixo": "", "cauda": "", "pedido": 0, "mostrado": 0}
+    trava = threading.Lock()
+    vagas = threading.Semaphore(TRADUCOES_SIMULTANEAS)
+
+    def mostrar() -> None:
+        texto = f"{estado['fixo']} {estado['cauda']}".strip()
         if texto:
             GLib.idle_add(barra.definir_pt, texto)
+
+    def traduzir_cauda(pedido: int, parcial: str) -> None:
+        try:
+            traducao = nuvem.traduzir(parcial)
+        except OSError as e:
+            print(f"traducao indisponivel: {e}", file=sys.stderr)
+            return
+        finally:
+            vagas.release()
+        with trava:
+            # Duas traduções em voo voltam fora de ordem: a mais velha não pode
+            # sobrescrever a mais nova.
+            if pedido <= estado["mostrado"]:
+                return
+            estado["mostrado"] = pedido
+            estado["cauda"] = traducao
+            mostrar()
+
+    parcial_anterior = ""
+    while True:
+        corrente.esperar(ESPERA_TRADUCAO)
+        fechadas, parcial = corrente.pegar()
+        for frase in fechadas:
+            try:
+                traducao = nuvem.traduzir(frase)
+            except OSError as e:
+                print(f"traducao indisponivel: {e}", file=sys.stderr)
+                continue
+            with trava:
+                estado["fixo"] = turno.podar(
+                    f"{estado['fixo']} {traducao}", LARGURA_LINHA, LINHAS_GUARDADAS
+                )
+                estado["cauda"] = ""
+                estado["mostrado"] = estado["pedido"]
+                mostrar()
+            parcial_anterior = ""
+        if parcial and parcial != parcial_anterior and vagas.acquire(blocking=False):
+            parcial_anterior = parcial
+            with trava:
+                estado["pedido"] += 1
+                pedido = estado["pedido"]
+            threading.Thread(target=traduzir_cauda, args=(pedido, parcial), daemon=True).start()
 
 
 def _capturar(recente: "audio.Recente") -> None:
