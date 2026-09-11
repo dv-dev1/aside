@@ -12,6 +12,10 @@ from gi.repository import Adw, Gdk, GLib, Gtk, WebKit  # noqa: E402
 
 from . import ativos, topo  # noqa: E402
 
+# Sob X11 a classe da janela sai do nome do programa: sem isto ela é "python3", e o
+# GNOME não liga a barra aberta ao lançador, que mostra o ícone do aside.
+GLib.set_prgname("io.github.dvdev1.aside")
+
 SEGUNDOS_ABERTA = 15
 # O CSS quebra a linha com a métrica real da fonte e a caixa mostra só as duas
 # últimas. Contar caractere aqui erra a largura e o navegador quebra por cima.
@@ -28,10 +32,11 @@ CSS_JANELA = b"window, window.background { background: transparent; box-shadow: 
 
 
 class Barra(Adw.Application):
-    def __init__(self, ao_iniciar=None) -> None:
+    def __init__(self, ao_iniciar=None, ao_limpar=None) -> None:
         super().__init__(application_id="io.github.dvdev1.aside")
         self.connect("activate", self._montar)
         self._ao_iniciar = ao_iniciar
+        self._ao_limpar = ao_limpar
         self._fechar_em = None
         self._pronta = False
         self._na_barra = False
@@ -40,6 +45,11 @@ class Barra(Adw.Application):
         self._espera: list[str] = []
 
     def _montar(self, _app) -> None:
+        # O app é de instância única: clicar no ícone de novo repete o activate aqui,
+        # e sem isto cada clique montava uma barra a mais.
+        if getattr(self, "_janela", None):
+            self._janela.present()
+            return
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
         folha = Gtk.CssProvider()
         folha.load_from_data(CSS_JANELA)
@@ -78,6 +88,10 @@ class Barra(Adw.Application):
             self._altura = int(recado.split(":")[1])
             if self._na_barra:
                 GLib.idle_add(self._encaixar)
+            return
+        if recado == "limpar":
+            if self._ao_limpar:
+                self._ao_limpar()
             return
         if recado == "arrastar":
             self._arrastar()

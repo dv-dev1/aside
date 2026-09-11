@@ -25,7 +25,7 @@ ESPERA_TRADUCAO = 0.3
 TRADUCOES_SIMULTANEAS = 2
 
 
-def _traduzir_ao_vivo(barra: "ui.Barra", corrente: turno.Corrente) -> None:
+def _traduzir_ao_vivo(barra: "ui.Barra", corrente: turno.Corrente, limpar: threading.Event) -> None:
     """Quem está aprendendo lê português muito mais rápido do que inglês, então é esta
     linha que ele acompanha. Frase fechada traduz uma vez e congela; só a cauda em curso
     é retraduzida, senão o texto se reescreve embaixo de quem está lendo."""
@@ -58,6 +58,13 @@ def _traduzir_ao_vivo(barra: "ui.Barra", corrente: turno.Corrente) -> None:
     parcial_anterior = ""
     while True:
         corrente.esperar(ESPERA_TRADUCAO)
+        if limpar.is_set():
+            limpar.clear()
+            corrente.pegar()
+            with trava:
+                estado.update(fixo="", cauda="", mostrado=estado["pedido"])
+            parcial_anterior = ""
+            continue
         fechadas, parcial = corrente.pegar()
         for frase in fechadas:
             try:
@@ -86,7 +93,9 @@ def _capturar(recente: "audio.Recente") -> None:
         recente.por(quadro)
 
 
-def _escutar(barra: ui.Barra, fila: queue.Queue, corrente: turno.Corrente) -> None:
+def _escutar(
+    barra: ui.Barra, fila: queue.Queue, corrente: turno.Corrente, limpar: threading.Event
+) -> None:
     from .stt import Transcritor
 
     t = Transcritor()
@@ -100,6 +109,12 @@ def _escutar(barra: ui.Barra, fila: queue.Queue, corrente: turno.Corrente) -> No
     try:
         while True:
             quadro = recente.pegar()
+            if limpar.is_set():
+                limpar.clear()
+                t.reiniciar()
+                porta.reiniciar()
+                estado.reiniciar()
+                lote, anterior, fechadas = [], "", ""
             if recente.reconheceu_perda():
                 t.reiniciar()
                 porta.reiniciar()
@@ -132,9 +147,12 @@ def _escutar(barra: ui.Barra, fila: queue.Queue, corrente: turno.Corrente) -> No
         t.fechar()
 
 
-def _pensar(barra: ui.Barra, fila: queue.Queue, reuniao: str) -> None:
+def _pensar(barra: ui.Barra, fila: queue.Queue, reuniao: str, limpar: threading.Event) -> None:
     historico: deque[str] = deque(maxlen=HISTORICO)
     while (falado := fila.get()) is not None:
+        if limpar.is_set():
+            limpar.clear()
+            historico.clear()
         historico.append(falado)
         # Sugestão para uma pergunta que já passou é pior que nenhuma: junta o que
         # chegou enquanto a última chamada rodava e responde só à fala mais recente.
@@ -157,13 +175,24 @@ def main() -> int:
     fila: queue.Queue = queue.Queue()
     corrente = turno.Corrente()
     reuniao = contexto.carregar()
+    limpar = {nome: threading.Event() for nome in ("legenda", "traducao", "sugestao")}
+
+    def pedir_limpeza() -> None:
+        for sinal in limpar.values():
+            sinal.set()
 
     def comecar() -> None:
-        threading.Thread(target=_escutar, args=(barra, fila, corrente), daemon=True).start()
-        threading.Thread(target=_pensar, args=(barra, fila, reuniao), daemon=True).start()
-        threading.Thread(target=_traduzir_ao_vivo, args=(barra, corrente), daemon=True).start()
+        threading.Thread(
+            target=_escutar, args=(barra, fila, corrente, limpar["legenda"]), daemon=True
+        ).start()
+        threading.Thread(
+            target=_pensar, args=(barra, fila, reuniao, limpar["sugestao"]), daemon=True
+        ).start()
+        threading.Thread(
+            target=_traduzir_ao_vivo, args=(barra, corrente, limpar["traducao"]), daemon=True
+        ).start()
 
-    barra = ui.Barra(ao_iniciar=comecar)
+    barra = ui.Barra(ao_iniciar=comecar, ao_limpar=pedir_limpeza)
     if sem_chave:
         barra.definir_estado(nuvem.SEM_CHAVE)
     elif contexto.nomes():

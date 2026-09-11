@@ -55,6 +55,14 @@ body {
                      50% { opacity: 0.35; transform: scale(0.82); } }
 .marca { cursor: grab; user-select: none; -webkit-user-select: none; }
 .marca:active { cursor: grabbing; }
+.limpar {
+  margin-top: auto; padding: 4px 0;
+  font-family: var(--sans); font-size: 11.5px; font-weight: 500; letter-spacing: 0.01em;
+  color: var(--terceira); background: none; border: 0; text-align: left;
+  cursor: pointer; transition: color 140ms ease-out;
+}
+.limpar:hover { color: var(--acento-tinta); }
+.limpar:focus-visible { outline: 2px solid var(--acento); outline-offset: 3px; border-radius: 4px; }
 .nome {
   font-family: var(--serif);
   font-size: 15px; line-height: 1;
@@ -161,7 +169,8 @@ body {
 </div>
 
 <div class="barra">
-  <div class="marca"><div class="pulso"></div><div class="nome">aside</div></div>
+  <div class="marca"><div class="pulso"></div><div class="nome">aside</div>
+    <button id="limpar" class="limpar" title="Limpar a tela e recomeçar">limpar</button></div>
   <div class="corpo">
     <div id="vazio" class="vazio">esperando alguém falar</div>
     <div id="en-caixa" class="en-caixa" hidden><div id="en" class="en"></div></div>
@@ -176,10 +185,14 @@ body {
 <script>
 document.body.className = 'modo-inicio';
 document.querySelector('.marca').addEventListener('mousedown', (e) => {
-  if (e.button === 0) window.webkit.messageHandlers.aside.postMessage('arrastar');
+  if (e.button === 0 && !e.target.closest('button')) window.webkit.messageHandlers.aside.postMessage('arrastar');
 });
 document.getElementById('comecar').addEventListener('click', () => {
   window.webkit.messageHandlers.aside.postMessage('iniciar');
+});
+document.getElementById('limpar').addEventListener('click', () => {
+  definirEn(''); definirPt(''); definirSugestoes([]);
+  window.webkit.messageHandlers.aside.postMessage('limpar');
 });
 function abrirBarra() { document.body.className = 'modo-barra'; }
 function medir() { observador.disconnect(); observador.observe(document.body); }
