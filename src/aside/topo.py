@@ -7,6 +7,7 @@ descarta. Por isso o app roda com GDK_BACKEND=x11.
 """
 
 import ctypes
+from functools import lru_cache
 
 RAIZ_REDIRECT = (1 << 20) | (1 << 19)
 CLIENT_MESSAGE = 33
@@ -28,6 +29,9 @@ class _Evento(ctypes.Structure):
     ]
 
 
+# Uma conexão só: abrir uma por chamada vazava conexões com o X a cada
+# redimensionamento, e o servidor tem limite de clientes.
+@lru_cache(maxsize=1)
 def _x11():
     x = ctypes.CDLL("libX11.so.6")
     x.XOpenDisplay.restype = ctypes.c_void_p
@@ -44,6 +48,7 @@ def _x11():
         ctypes.c_void_p,
     ]
     x.XMoveResizeWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong] + [ctypes.c_int] * 4
+    x.XResizeWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_uint, ctypes.c_uint]
     x.XFlush.argtypes = [ctypes.c_void_p]
     return x, x.XOpenDisplay(None)
 
@@ -79,4 +84,14 @@ def mover(xid: int, x_px: int, y_px: int, largura: int, altura: int) -> None:
         return
     if d:
         x.XMoveResizeWindow(d, xid, x_px, y_px, largura, altura)
+        x.XFlush(d)
+
+
+def redimensionar(xid: int, largura: int, altura: int) -> None:
+    try:
+        x, d = _x11()
+    except OSError:
+        return
+    if d:
+        x.XResizeWindow(d, xid, largura, altura)
         x.XFlush(d)

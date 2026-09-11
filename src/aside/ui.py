@@ -35,6 +35,7 @@ class Barra(Adw.Application):
         self._fechar_em = None
         self._pronta = False
         self._na_barra = False
+        self._posicionada = False
         self._altura = 200
         self._espera: list[str] = []
 
@@ -78,6 +79,9 @@ class Barra(Adw.Application):
             if self._na_barra:
                 GLib.idle_add(self._encaixar)
             return
+        if recado == "arrastar":
+            self._arrastar()
+            return
         if recado != "iniciar":
             return
         self._na_barra = True
@@ -101,9 +105,21 @@ class Barra(Adw.Application):
         xid = self._xid()
         if not xid:
             return False
+        if self._posicionada:
+            # Depois do primeiro posicionamento só a altura muda: mover de novo jogaria
+            # de volta pro canto uma barra que o usuário arrastou.
+            topo.redimensionar(xid, LARGURA, self._altura)
+            return False
         area = Gdk.Display.get_default().get_monitors()[0].get_geometry()
         topo.mover(xid, area.width - LARGURA - MARGEM, MARGEM, LARGURA, self._altura)
+        self._posicionada = True
         return False
+
+    def _arrastar(self) -> None:
+        superficie = self._janela.get_surface()
+        ponteiro = Gdk.Display.get_default().get_default_seat().get_pointer()
+        _, x, y, _ = superficie.get_device_position(ponteiro)
+        superficie.begin_move(ponteiro, 1, x, y, Gdk.CURRENT_TIME)
 
     def _rodar(self, js: str) -> None:
         if not self._pronta:

@@ -53,6 +53,8 @@ body {
 }
 @keyframes respira { 0%, 100% { opacity: 1; transform: scale(1); }
                      50% { opacity: 0.35; transform: scale(0.82); } }
+.marca { cursor: grab; user-select: none; -webkit-user-select: none; }
+.marca:active { cursor: grabbing; }
 .nome {
   font-family: var(--serif);
   font-size: 15px; line-height: 1;
@@ -173,6 +175,9 @@ body {
 
 <script>
 document.body.className = 'modo-inicio';
+document.querySelector('.marca').addEventListener('mousedown', (e) => {
+  if (e.button === 0) window.webkit.messageHandlers.aside.postMessage('arrastar');
+});
 document.getElementById('comecar').addEventListener('click', () => {
   window.webkit.messageHandlers.aside.postMessage('iniciar');
 });
