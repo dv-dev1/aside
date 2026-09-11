@@ -2,9 +2,9 @@
 
 **Live subtitles and reply suggestions for meetings in a language you are still learning.**
 
-An aside: the line only you can hear. A thin bar at the bottom of your screen shows what the
-other person just said — in English as they speak it, in Portuguese once the sentence lands —
-and keeps three short replies ready for when you freeze.
+An aside: the line only you can hear. A small bar floating in the top-right corner of your
+screen shows what the other person just said — in English as they speak, in Portuguese right
+behind it — and keeps three short replies ready for when you freeze.
 
 Your meeting audio never leaves your machine. Transcription runs locally on the integrated GPU.
 Only the transcribed text is sent out, and only to translate and to suggest.
@@ -50,10 +50,19 @@ python3 -m aside
 First run downloads the Parakeet model (516 MB) and two fonts into `~/.local/share/aside`.
 Set `OPENAI_API_KEY` for translation and suggestions; without it the English subtitle still runs.
 
-## One thing you do by hand
+## Interview mode
 
-GNOME's Mutter does not implement `zwlr_layer_shell_v1`, so no application can put itself on
-top. Open the window menu with Alt+Space and tick **Always on Top**, once per session.
+Drop Markdown files into `~/.config/aside/` — your profile, the job description, notes about
+who you are meeting. They are read at startup and turn the suggestions into first-person answers
+grounded only in those facts. They live outside the repository on purpose: they carry personal
+data, and they are sent to the model with every suggestion, never committed.
+
+## How it stays on top
+
+GNOME's Mutter does not implement `zwlr_layer_shell_v1`, so no Wayland application can put
+itself above the others. `aside` runs under XWayland, where the protocol is EWMH, and asks for
+`_NET_WM_STATE_ABOVE` with a ClientMessage to the root window. Writing the property directly
+does not work: Mutter discards it.
 
 ## License
 
