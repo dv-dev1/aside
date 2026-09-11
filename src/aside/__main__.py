@@ -1,74 +1,145 @@
 """Liga captura, transcrição, turno e nuvem na barra."""
 
-import queue
+import os
+
+# A barra só consegue flutuar acima das outras janelas sob XWayland: o Mutter no
+# Wayland puro não implementa nenhum protocolo que permita isso. Ver `topo.py`.
+os.environ.setdefault("GDK_BACKEND", "x11")
+
+import queue  # noqa: E402
 import sys
 import threading
+import time  # noqa: E402
 from collections import deque
 
 from gi.repository import GLib
 
-from . import ativos, audio, nuvem, turno, ui
+from . import ativos, audio, contexto, nuvem, turno, ui
 
 SEGUNDOS_POR_QUADRO = audio.QUADRO / audio.TAXA
-# ponytail: 300ms por chamada. Medido: 100ms nao adianta a primeira palavra em nada,
-# porque os ~1,8s de atraso sao contexto interno do modelo, e custa 3x mais GPU.
-QUADROS_POR_CHAMADA = 3
-CONTEXTO = 6
+QUADROS_POR_CHAMADA = 1
+HISTORICO = 6
+SEGUNDOS_DE_FOLGA = 2
+LARGURA_LINHA = 44
+LINHAS_GUARDADAS = 6
+INTERVALO_TRADUCAO = 1.2
 
 
-def _escutar(barra: ui.Barra, fila: queue.Queue) -> None:
+def _traduzir_ao_vivo(barra: "ui.Barra", corrente: turno.Corrente) -> None:
+    """Quem está aprendendo lê português muito mais rápido do que inglês, então é esta
+    linha que ele acompanha. Frase fechada traduz uma vez e congela; só a cauda em curso
+    é retraduzida, senão o texto se reescreve embaixo de quem está lendo."""
+    fixo = ""
+    cauda = ""
+    parcial_anterior = ""
+    while True:
+        time.sleep(INTERVALO_TRADUCAO)
+        fechadas, parcial = corrente.pegar()
+        try:
+            for frase in fechadas:
+                fixo = turno.podar(
+                    f"{fixo} {nuvem.traduzir(frase)}", LARGURA_LINHA, LINHAS_GUARDADAS
+                )
+                cauda = ""
+                parcial_anterior = ""
+            if parcial and parcial != parcial_anterior:
+                parcial_anterior = parcial
+                cauda = nuvem.traduzir(parcial)
+        except OSError as e:
+            print(f"traducao indisponivel: {e}", file=sys.stderr)
+            continue
+        texto = f"{fixo} {cauda}".strip()
+        if texto:
+            GLib.idle_add(barra.definir_pt, texto)
+
+
+def _capturar(recente: "audio.Recente") -> None:
+    for quadro in audio.quadros():
+        recente.por(quadro)
+
+
+def _escutar(barra: ui.Barra, fila: queue.Queue, corrente: turno.Corrente) -> None:
     from .stt import Transcritor
 
     t = Transcritor()
-    silencio = duracao = 0.0
+    estado = turno.Turno(SEGUNDOS_POR_QUADRO)
     anterior = ""
+    fechadas = ""
     lote: list[float] = []
     porta = audio.Porta()
+    recente = audio.Recente(int(SEGUNDOS_DE_FOLGA / SEGUNDOS_POR_QUADRO))
+    threading.Thread(target=_capturar, args=(recente,), daemon=True).start()
     try:
-        for quadro in audio.quadros():
+        while True:
+            quadro = recente.pegar()
+            if recente.reconheceu_perda():
+                t.reiniciar()
+                porta.reiniciar()
+                estado.reiniciar()
+                lote, anterior = [], ""
             passaram = porta.passar(quadro)
             if not passaram:
                 continue
-            duracao += SEGUNDOS_POR_QUADRO
-            silencio = silencio + SEGUNDOS_POR_QUADRO if audio.mudo(quadro) else 0.0
             for q in passaram:
                 lote += audio.pcm_float(q)
             if len(lote) < QUADROS_POR_CHAMADA * audio.QUADRO:
                 continue
-            texto, lote = t.alimentar(lote), []
-            if texto != anterior:
-                anterior = texto
-                GLib.idle_add(barra.definir_en, texto)
-            if texto and turno.fechou(texto, silencio, duracao):
-                fila.put(t.reiniciar())
-                silencio = duracao = 0.0
-                anterior = ""
+            novo, lote = t.alimentar(lote), []
+            if novo is not None:
+                visivel = f"{fechadas} {novo}".strip()
+                if visivel != anterior:
+                    anterior = visivel
+                    corrente.por_parcial(novo)
+                    GLib.idle_add(barra.definir_en, visivel)
+            if estado.quadro(audio.mudo(quadro), novo):
+                final = t.reiniciar()
+                # A legenda não pode voltar ao zero quando o turno fecha: sem guardar o
+                # que já foi dito, a tela pisca uma palavra solta e ninguém consegue ler.
+                fechadas = turno.podar(f"{fechadas} {final}", LARGURA_LINHA, LINHAS_GUARDADAS)
+                corrente.fechar(final)
+                fila.put(final)
+                estado.reiniciar()
                 porta.reiniciar()
     finally:
         t.fechar()
 
 
-def _pensar(barra: ui.Barra, fila: queue.Queue) -> None:
-    historico: deque[str] = deque(maxlen=CONTEXTO)
+def _pensar(barra: ui.Barra, fila: queue.Queue, reuniao: str) -> None:
+    historico: deque[str] = deque(maxlen=HISTORICO)
     while (falado := fila.get()) is not None:
         historico.append(falado)
+        # Sugestão para uma pergunta que já passou é pior que nenhuma: junta o que
+        # chegou enquanto a última chamada rodava e responde só à fala mais recente.
+        while not fila.empty():
+            historico.append(fila.get_nowait())
+        pedido = "\n".join(historico) + f"\n\nResponda a esta ultima fala: {historico[-1]}"
         try:
-            GLib.idle_add(barra.definir_pt, nuvem.traduzir(falado))
-            GLib.idle_add(barra.definir_sugestoes, nuvem.sugerir("\n".join(historico)))
+            GLib.idle_add(barra.definir_sugestoes, nuvem.sugerir(pedido, reuniao))
         except OSError as e:
             print(f"nuvem indisponivel: {e}", file=sys.stderr)
 
 
 def main() -> int:
-    if not nuvem.tem_chave():
+    sem_chave = not nuvem.tem_chave()
+    if sem_chave:
         print(nuvem.SEM_CHAVE, flush=True)
     ativos.fontes()
     ativos.modelo()
 
-    barra = ui.Barra()
     fila: queue.Queue = queue.Queue()
-    for alvo in (_escutar, _pensar):
-        threading.Thread(target=alvo, args=(barra, fila), daemon=True).start()
+    corrente = turno.Corrente()
+    reuniao = contexto.carregar()
+
+    def comecar() -> None:
+        threading.Thread(target=_escutar, args=(barra, fila, corrente), daemon=True).start()
+        threading.Thread(target=_pensar, args=(barra, fila, reuniao), daemon=True).start()
+        threading.Thread(target=_traduzir_ao_vivo, args=(barra, corrente), daemon=True).start()
+
+    barra = ui.Barra(ao_iniciar=comecar)
+    if sem_chave:
+        barra.definir_estado(nuvem.SEM_CHAVE)
+    elif contexto.nomes():
+        barra.definir_estado("preparado com: " + ", ".join(contexto.nomes()))
     return barra.run([])
 
 
