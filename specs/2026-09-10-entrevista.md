@@ -55,3 +55,12 @@ chamada anterior roda é juntado, não enfileirado.
 Cada sugestão tem no máximo 15 palavras, sem expressão idiomática. Fato com
 número sai das frases prontas de `vaga.md`, sem paráfrase: nunca "rate" para os
 agendamentos.
+
+### 6. Sugestão amarrada no perfil, não genérica
+
+    python3 -m aside.nuvem --pergunta "What is your greatest strength?"
+
+As três linhas formam uma resposta só: a resposta direta, um exemplo concreto do
+perfil (projeto, ferramenta ou número) e a ligação com a vaga. Respostas prontas e
+histórias moram em `~/.config/aside/`, nunca no prompt versionado: o repositório é
+público e o prompt não pode carregar a vida de ninguém.
