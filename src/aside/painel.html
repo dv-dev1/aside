@@ -1,0 +1,218 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: "Schibsted Grotesk"; src: url("SchibstedGrotesk.ttf");
+             font-weight: 300 900; font-display: block; }
+@font-face { font-family: "Instrument Serif"; src: url("InstrumentSerif-Regular.ttf");
+             font-weight: 400; font-display: block; }
+
+:root {
+  --papel: #FCFCF8;
+  --tinta: #0e0f0c;
+  --segunda: #454745;
+  --terceira: #6a6c6a;
+  --fio: rgba(71, 67, 42, 0.14);
+  --fio-forte: rgba(71, 67, 42, 0.20);
+  --acento: #5B6BF0;
+  --acento-tinta: #2F3BAE;
+  --sans: "Schibsted Grotesk", system-ui, sans-serif;
+  --serif: "Instrument Serif", Georgia, serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body.modo-inicio .barra { display: none; }
+body.modo-barra .inicio { display: none; }
+html, body { background: transparent; }
+body {
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding: 12px 14px 18px;
+}
+
+.barra {
+  background: var(--papel);
+  border: 1px solid var(--fio);
+  border-radius: 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 28px rgba(0,0,0,0.08);
+  display: flex;
+  overflow: hidden;
+}
+
+.marca {
+  flex: 0 0 96px;
+  padding: 22px 0 22px 24px;
+  border-right: 1px solid var(--fio);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.pulso {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--acento);
+  animation: respira 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes respira { 0%, 100% { opacity: 1; transform: scale(1); }
+                     50% { opacity: 0.35; transform: scale(0.82); } }
+.nome {
+  font-family: var(--serif);
+  font-size: 15px; line-height: 1;
+  color: #a3a59f;
+  letter-spacing: 0.01em;
+}
+
+.corpo { flex: 1; min-width: 0; padding: 20px 26px 22px; }
+
+.vazio {
+  font-family: var(--serif);
+  font-size: 20px; color: #9a9c96;
+}
+
+.en-caixa {
+  height: calc(2 * 1.34 * 22px);
+  overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.en {
+  font-size: 22px; line-height: 1.34; font-weight: 500;
+  letter-spacing: -0.011em; color: var(--tinta);
+}
+.pt-caixa {
+  height: calc(2 * 1.45 * 14px);
+  overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  margin-top: 10px;
+}
+.pt {
+  font-size: 14px; line-height: 1.45; font-weight: 400;
+  color: var(--terceira);
+}
+
+.gaveta {
+  display: grid; grid-template-rows: 0fr;
+  transition: grid-template-rows 340ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 260ms ease-out;
+  opacity: 0;
+}
+.gaveta.aberta { grid-template-rows: 1fr; opacity: 1; }
+.gaveta > div { overflow: hidden; }
+
+.regua { height: 1px; background: var(--fio-forte); margin: 19px 0 17px; }
+
+.sugestao { margin-bottom: 14px; }
+.sugestao:last-child { margin-bottom: 0; }
+.fala {
+  font-size: 15.5px; line-height: 1.3; font-weight: 500;
+  color: var(--acento-tinta); letter-spacing: -0.006em;
+}
+.glosa {
+  font-size: 12.5px; line-height: 1.35; font-weight: 400;
+  color: var(--terceira); margin-top: 2px;
+}
+
+.inicio { display: flex; justify-content: center; }
+.cartao {
+  background: var(--papel);
+  border: 1px solid var(--fio);
+  border-radius: 22px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 34px rgba(0,0,0,0.09);
+  padding: 52px 56px 44px;
+  width: 100%;
+  max-width: 560px;
+}
+.titulo {
+  font-family: var(--serif);
+  font-size: 46px; line-height: 1; color: var(--tinta);
+  letter-spacing: -0.012em;
+}
+.subtitulo {
+  font-size: 15px; line-height: 1.55; color: var(--terceira);
+  margin-top: 16px; max-width: 42ch;
+}
+.botao {
+  font-family: var(--sans);
+  font-size: 15px; font-weight: 500; letter-spacing: -0.005em;
+  color: #fff; background: var(--acento);
+  border: 0; border-radius: 12px;
+  padding: 13px 26px; margin-top: 32px;
+  cursor: pointer;
+  transition: background 160ms ease-out, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.botao:hover { background: var(--acento-tinta); }
+.botao:active { transform: scale(0.985); }
+.botao:focus-visible { outline: 2px solid var(--acento); outline-offset: 3px; }
+.estado {
+  font-size: 12.5px; line-height: 1.5; color: #9a9c96;
+  margin-top: 22px; min-height: 1em;
+}
+
+::selection { background: rgba(91, 107, 240, 0.18); color: var(--tinta); }
+</style>
+
+<div class="inicio">
+  <div class="cartao">
+    <div class="titulo">aside</div>
+    <p class="subtitulo">A legenda do que o outro está falando, e o que você pode responder.
+      Nada sai da sua máquina além do texto.</p>
+    <button id="comecar" class="botao">Nova reunião</button>
+    <div id="estado" class="estado"></div>
+  </div>
+</div>
+
+<div class="barra">
+  <div class="marca"><div class="pulso"></div><div class="nome">aside</div></div>
+  <div class="corpo">
+    <div id="vazio" class="vazio">esperando alguém falar</div>
+    <div id="en-caixa" class="en-caixa" hidden><div id="en" class="en"></div></div>
+    <div id="pt-caixa" class="pt-caixa" hidden><div id="pt" class="pt"></div></div>
+    <div id="gaveta" class="gaveta"><div>
+      <div class="regua"></div>
+      <div id="sugestoes"></div>
+    </div></div>
+  </div>
+</div>
+
+<script>
+document.body.className = 'modo-inicio';
+document.getElementById('comecar').addEventListener('click', () => {
+  window.webkit.messageHandlers.aside.postMessage('iniciar');
+});
+function abrirBarra() { document.body.className = 'modo-barra'; }
+function medir() { observador.disconnect(); observador.observe(document.body); }
+function definirEstado(t) { document.getElementById('estado').textContent = t; }
+const observador = new ResizeObserver(() => {
+  const alvo = document.body.classList.contains('modo-barra')
+    ? document.querySelector('.barra') : document.querySelector('.cartao');
+  if (!alvo) return;
+  const altura = Math.ceil(alvo.getBoundingClientRect().height) + 30;
+  window.webkit.messageHandlers.aside.postMessage('altura:' + altura);
+});
+observador.observe(document.body);
+
+function definirEn(t) {
+  document.getElementById('vazio').hidden = !!t;
+  document.getElementById('en-caixa').hidden = !t;
+  document.getElementById('en').textContent = t;
+}
+function definirPt(t) {
+  document.getElementById('pt-caixa').hidden = !t;
+  document.getElementById('pt').textContent = t;
+}
+function definirSugestoes(itens) {
+  const caixa = document.getElementById('sugestoes');
+  caixa.replaceChildren();
+  for (const [ingles, portugues] of itens) {
+    const bloco = document.createElement('div');
+    bloco.className = 'sugestao';
+    const a = document.createElement('div');
+    a.className = 'fala'; a.textContent = ingles;
+    bloco.append(a);
+    if (portugues) {
+      const b = document.createElement('div');
+      b.className = 'glosa'; b.textContent = portugues;
+      bloco.append(b);
+    }
+    caixa.append(bloco);
+  }
+  document.getElementById('gaveta').classList.toggle('aberta', itens.length > 0);
+}
+</script>

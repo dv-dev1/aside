@@ -1,104 +1,124 @@
-"""A barra: legenda em cima, sugestões embaixo."""
+"""Duas telas na mesma janela: a inicial, e a barra que flutua durante a reunião."""
+
+import json
+from pathlib import Path
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
+gi.require_version("WebKit", "6.0")
+from gi.repository import Adw, Gdk, GLib, Gtk, WebKit  # noqa: E402
+
+from . import ativos, topo  # noqa: E402
 
 SEGUNDOS_ABERTA = 15
+# O CSS quebra a linha com a métrica real da fonte e a caixa mostra só as duas
+# últimas. Contar caractere aqui erra a largura e o navegador quebra por cima.
+GUARDA_EN = 400
+GUARDA_PT = 300
+INICIO = (740, 470)
+LARGURA = 740
+MARGEM = 22
+PAINEL = Path(__file__).with_name("painel.html")
 
-CSS = b"""
-window, .fundo { background: #FCFCF8; }
-.en { font-family: "Schibsted Grotesk", system-ui, sans-serif;
-      font-size: 20px; color: #0e0f0c; }
-.pt { font-family: "Schibsted Grotesk", system-ui, sans-serif;
-      font-size: 15px; color: #6a6c6a; }
-.marca { font-family: "Instrument Serif", Georgia, serif; font-size: 13px; color: #6a6c6a; }
-.vazio { font-family: "Instrument Serif", Georgia, serif; font-size: 17px; color: #6a6c6a; }
-.regua { background: rgba(71, 67, 42, 0.2); min-height: 1px; }
-.sug-en { font-family: "Schibsted Grotesk", system-ui, sans-serif;
-          font-size: 15px; color: #2F3BAE; }
-.sug-pt { font-family: "Schibsted Grotesk", system-ui, sans-serif;
-          font-size: 12px; color: #6a6c6a; }
-.numero { font-family: "Schibsted Grotesk", system-ui, sans-serif;
-          font-size: 12px; color: #5B6BF0; }
-.painel { background: rgba(91, 107, 240, 0.06); border-radius: 12px; padding: 10px 14px; }
-"""
-
-
-def _rotulo(classe: str, texto: str = "") -> Gtk.Label:
-    r = Gtk.Label(label=texto, xalign=0, wrap=True)
-    r.add_css_class(classe)
-    return r
+# A janela precisa ser transparente para o cartao flutuar com sombra: sem isto o
+# Adwaita pinta o fundo do tema e sobra uma moldura escura em volta.
+CSS_JANELA = b"window, window.background { background: transparent; box-shadow: none; }"
 
 
 class Barra(Adw.Application):
-    def __init__(self) -> None:
+    def __init__(self, ao_iniciar=None) -> None:
         super().__init__(application_id="io.github.dvdev1.aside")
         self.connect("activate", self._montar)
+        self._ao_iniciar = ao_iniciar
         self._fechar_em = None
+        self._pronta = False
+        self._na_barra = False
+        self._altura = 200
+        self._espera: list[str] = []
 
     def _montar(self, _app) -> None:
-        css = Gtk.CssProvider()
-        css.load_from_data(CSS)
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+        folha = Gtk.CssProvider()
+        folha.load_from_data(CSS_JANELA)
         Gtk.StyleContext.add_provider_for_display(
-            Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            Gdk.Display.get_default(), folha, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-        self._en = _rotulo("en")
-        self._pt = _rotulo("pt")
-        self._vazio = _rotulo("vazio", "esperando alguem falar")
+        gerente = WebKit.UserContentManager()
+        gerente.register_script_message_handler("aside", None)
+        gerente.connect("script-message-received::aside", self._recado)
 
-        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        caixa.set_margin_start(20)
-        caixa.set_margin_end(20)
-        caixa.set_margin_top(14)
-        caixa.set_margin_bottom(14)
-        caixa.append(self._vazio)
-        caixa.append(self._en)
-        caixa.append(self._pt)
+        self._vista = WebKit.WebView(user_content_manager=gerente)
+        self._vista.set_background_color(Gdk.RGBA(red=0, green=0, blue=0, alpha=0))
+        self._vista.connect("load-changed", self._carregou)
+        self._vista.load_html(PAINEL.read_text(), ativos.FONTES.as_uri() + "/")
 
-        self._sugestoes = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        self._sugestoes.add_css_class("painel")
-        self._gaveta = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_UP)
-        self._gaveta.set_transition_duration(180)
-        self._gaveta.set_child(self._sugestoes)
-
-        regua = Gtk.Box()
-        regua.add_css_class("regua")
-
-        raiz = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        raiz.add_css_class("fundo")
-        raiz.append(caixa)
-        raiz.append(regua)
-        raiz.append(self._gaveta)
-
-        self._janela = Gtk.ApplicationWindow(application=self, title="aside")
-        self._janela.set_default_size(1100, 130)
-        self._janela.set_child(raiz)
+        self._janela = Adw.ApplicationWindow(application=self, title="aside")
+        self._janela.set_default_size(*INICIO)
+        self._janela.set_content(self._vista)
         self._janela.present()
 
+    def _carregou(self, _vista, evento) -> None:
+        if evento != WebKit.LoadEvent.FINISHED:
+            return
+        self._pronta = True
+        for js in self._espera:
+            self._rodar(js)
+        self._espera.clear()
+
+    def _recado(self, _gerente, valor) -> None:
+        recado = valor.to_string()
+        if recado.startswith("altura:"):
+            self._altura = int(recado.split(":")[1])
+            if self._na_barra:
+                GLib.idle_add(self._encaixar)
+            return
+        if recado != "iniciar":
+            return
+        self._na_barra = True
+        self._rodar("abrirBarra()")
+        GLib.timeout_add(160, self._flutuar)
+        if self._ao_iniciar:
+            self._ao_iniciar()
+
+    def _xid(self) -> int:
+        superficie = self._janela.get_surface()
+        return getattr(superficie, "get_xid", lambda: 0)()
+
+    def _flutuar(self) -> bool:
+        """Só funciona sob XWayland: no Wayland puro nenhuma janela se declara acima."""
+        if self._xid():
+            topo.flutuar(self._xid())
+            self._encaixar()
+        return False
+
+    def _encaixar(self) -> bool:
+        xid = self._xid()
+        if not xid:
+            return False
+        area = Gdk.Display.get_default().get_monitors()[0].get_geometry()
+        topo.mover(xid, area.width - LARGURA - MARGEM, MARGEM, LARGURA, self._altura)
+        return False
+
+    def _rodar(self, js: str) -> None:
+        if not self._pronta:
+            self._espera.append(js)
+            return
+        self._vista.evaluate_javascript(js, -1, None, None, None, None, None)
+
+    def definir_estado(self, texto: str) -> None:
+        self._rodar(f"definirEstado({json.dumps(texto)})")
+
     def definir_en(self, texto: str) -> None:
-        self._vazio.set_visible(not texto)
-        self._en.set_text(texto)
+        self._rodar(f"definirEn({json.dumps(texto[-GUARDA_EN:])})")
 
     def definir_pt(self, texto: str) -> None:
-        self._pt.set_text(texto)
+        self._rodar(f"definirPt({json.dumps(texto[-GUARDA_PT:])})")
 
     def definir_sugestoes(self, itens: list[tuple[str, str]]) -> None:
-        while filho := self._sugestoes.get_first_child():
-            self._sugestoes.remove(filho)
-        for i, (ingles, portugues) in enumerate(itens, 1):
-            linha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            linha.append(_rotulo("numero", str(i)))
-            texto = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-            texto.append(_rotulo("sug-en", ingles))
-            if portugues:
-                texto.append(_rotulo("sug-pt", portugues))
-            linha.append(texto)
-            self._sugestoes.append(linha)
-        self._gaveta.set_reveal_child(bool(itens))
+        self._rodar(f"definirSugestoes({json.dumps([list(i) for i in itens])})")
         self._reagendar_fechamento()
 
     def _reagendar_fechamento(self) -> None:
@@ -107,6 +127,6 @@ class Barra(Adw.Application):
         self._fechar_em = GLib.timeout_add_seconds(SEGUNDOS_ABERTA, self._recolher)
 
     def _recolher(self) -> bool:
-        self._gaveta.set_reveal_child(False)
+        self._rodar("definirSugestoes([])")
         self._fechar_em = None
         return False
