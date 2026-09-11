@@ -3,8 +3,10 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 import urllib.request
+from functools import lru_cache
 
 from . import contexto
 
@@ -45,8 +47,28 @@ _ENTREVISTA = (
 )
 
 
+@lru_cache(maxsize=1)
+def _do_chaveiro() -> str:
+    """Quem abre pelo atalho do GNOME não tem o export do terminal: a chave vem do
+    chaveiro do sistema, cifrada e destrancada no login."""
+    try:
+        r = subprocess.run(
+            ["secret-tool", "lookup", "service", "aside"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return r.stdout.strip()
+
+
+def _chave() -> str:
+    return os.environ.get("OPENAI_API_KEY") or _do_chaveiro()
+
+
 def tem_chave() -> bool:
-    return bool(os.environ.get("OPENAI_API_KEY"))
+    return bool(_chave())
 
 
 def _chat(sistema: str, usuario: str) -> str:
@@ -63,7 +85,7 @@ def _chat(sistema: str, usuario: str) -> str:
         URL,
         data=corpo,
         headers={
-            "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+            "Authorization": f"Bearer {_chave()}",
             "Content-Type": "application/json",
         },
     )

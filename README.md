@@ -49,6 +49,8 @@ python3 -m aside
 
 First run downloads the Parakeet model (516 MB) and two fonts into `~/.local/share/aside`.
 Set `OPENAI_API_KEY` for translation and suggestions; without it the English subtitle still runs.
+To open it from the app grid without exporting anything, store the key once in the GNOME keyring:
+`secret-tool store --label='aside OpenAI' service aside`.
 
 ## Interview mode
 
