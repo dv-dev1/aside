@@ -4,6 +4,7 @@ import argparse
 import os
 import subprocess
 import sys
+import threading
 from array import array
 from collections import deque
 from collections.abc import Iterator
@@ -13,7 +14,7 @@ TAXA_CAPTURA = 48000
 FATOR = TAXA_CAPTURA // TAXA
 QUADRO = 1600
 LIMIAR_SILENCIO = 350
-LATENCIA_MS = 100
+LATENCIA_MS = 20
 
 
 def reduzir(bruto: bytes) -> bytes:
@@ -43,6 +44,34 @@ def rms(quadro: bytes) -> float:
 
 def mudo(quadro: bytes) -> bool:
     return rms(quadro) < LIMIAR_SILENCIO
+
+
+class Recente:
+    """Guarda só os últimos segundos capturados. Legenda ao vivo prefere perder um
+    trecho a ficar meio minuto atrás da conversa: quando a fila enche, o quadro mais
+    velho cai e quem consome descobre pelo `perdeu` que precisa recomeçar o fluxo."""
+
+    def __init__(self, quadros_max: int):
+        self._fila: deque[bytes] = deque(maxlen=quadros_max)
+        self._sino = threading.Condition()
+        self.perdeu = False
+
+    def por(self, quadro: bytes) -> None:
+        with self._sino:
+            if len(self._fila) == self._fila.maxlen:
+                self.perdeu = True
+            self._fila.append(quadro)
+            self._sino.notify()
+
+    def pegar(self) -> bytes:
+        with self._sino:
+            while not self._fila:
+                self._sino.wait()
+            return self._fila.popleft()
+
+    def reconheceu_perda(self) -> bool:
+        perdeu, self.perdeu = self.perdeu, False
+        return perdeu
 
 
 class Porta:

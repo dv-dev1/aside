@@ -45,3 +45,14 @@ def test_reduzir_encolhe_pela_taxa():
     reduzido.frombytes(audio.reduzir(bruto))
     assert len(reduzido) == audio.QUADRO
     assert set(reduzido) == {1000}
+
+
+def test_recente_descarta_o_mais_velho_e_avisa():
+    r = audio.Recente(2)
+    r.por(b"a")
+    r.por(b"b")
+    assert not r.perdeu
+    r.por(b"c")
+    assert r.reconheceu_perda()
+    assert not r.reconheceu_perda()
+    assert r.pegar() == b"b"

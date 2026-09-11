@@ -13,6 +13,14 @@ import transcribe_cpp as tc
 from . import ativos
 
 BACKEND = "vulkan"
+TAXA = 16000
+
+# O padrao do modelo espera 3,20s de audio antes da primeira palavra. Medido na grade
+# que o proprio modelo aceita: 560/0 entrega a primeira palavra em 1,20s e roda a
+# 2,24x tempo real. `chunk` e o que custa: 160 entrega 1,20s tambem, mas roda a 0,60x
+# e atrasa 1s a cada 2s de fala, para sempre. Nunca mexer aqui sem medir vazao junto.
+CHUNK_MS = 560
+RIGHT_MS = 0
 
 
 class Transcritor:
@@ -22,16 +30,31 @@ class Transcritor:
         except tc.BackendError:
             self._modelo = tc.Model(str(caminho or ativos.modelo()), backend="cpu")
         self._sessao = tc.Session(self._modelo)
-        self._fluxo = self._sessao.stream()
+        self._aquecer()
+        self._fluxo = self._abrir()
 
-    def alimentar(self, pcm: list[float]) -> str:
-        self._fluxo.feed(pcm)
+    def _aquecer(self) -> None:
+        """A primeira inferência custa vários segundos a mais que as seguintes, e sem
+        isto ela cairia na primeira frase da reunião."""
+        fluxo = self._abrir()
+        fluxo.feed([0.0] * TAXA)
+        fluxo.finalize()
+
+    def _abrir(self):
+        return self._sessao.stream(
+            family=tc.ParakeetBufferedStreamOptions(chunk_ms=CHUNK_MS, right_ms=RIGHT_MS)
+        )
+
+    def alimentar(self, pcm: list[float]) -> str | None:
+        """Devolve None quando nada mudou: quem chama evita redesenhar a barra à toa."""
+        if not self._fluxo.feed(pcm).result_changed:
+            return None
         return self._fluxo.text().full
 
     def reiniciar(self) -> str:
         self._fluxo.finalize()
         final = self._fluxo.text().full
-        self._fluxo = self._sessao.stream()
+        self._fluxo = self._abrir()
         return final
 
     def fechar(self) -> None:
