@@ -56,6 +56,9 @@ class Barra(Adw.Application):
         self._vista.load_html(PAINEL.read_text(), ativos.FONTES.as_uri() + "/")
 
         self._janela = Adw.ApplicationWindow(application=self, title="aside")
+        # Com decoração, o GTK reserva sob X11 16px em cima e 40px embaixo de sombra
+        # invisível dentro da janela, e o fundo do cartão saía cortado.
+        self._janela.set_decorated(False)
         self._janela.set_default_size(*INICIO)
         self._janela.set_content(self._vista)
         self._janela.present()
